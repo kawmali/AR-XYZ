@@ -29,7 +29,6 @@
   </script>
 
   <script type="module">
-    // ดักดูว่าโค้ดบรรทัดแรกทำงานหรือไม่
     document.getElementById('info').innerText = 'กำลังโหลด 3D Engine...';
 
     import * as THREE from 'three';
@@ -46,7 +45,6 @@
     let inventoryData = [];
     let isOriginSet = false;
 
-    // ตรวจสอบเบราว์เซอร์
     if (!('xr' in navigator)) {
       document.getElementById('info').innerText = 'อุปกรณ์/เบราว์เซอร์นี้ ไม่รองรับ AR';
     } else {
@@ -90,11 +88,10 @@
         renderer.xr.enabled = true;
         container.appendChild(renderer.domElement);
 
-        // โค้ดใหม่ (ย้าย hit-test มาไว้ที่ optionalFeatures)
-document.body.appendChild(ARButton.createButton(renderer, { 
-  requiredFeatures: ['immersive-ar'],
-  optionalFeatures: ['hit-test'] 
-}));
+        // ✅ แก้ไขจุดนี้: ใส่ requiredFeatures ให้ถูกต้องตามมาตรฐาน Three.js
+        document.body.appendChild(ARButton.createButton(renderer, { 
+          requiredFeatures: ['immersive-ar', 'hit-test'] 
+        }));
 
         fetchInventory();
 
@@ -213,6 +210,8 @@ document.body.appendChild(ARButton.createButton(renderer, {
           session.requestReferenceSpace('viewer').then((viewerSpace) => {
             session.requestHitTestSource({ space: viewerSpace }).then((source) => {
               hitTestSource = source;
+            }).catch((err) => {
+              console.warn("HitTestSource error:", err);
             });
           });
           session.addEventListener('end', () => {
