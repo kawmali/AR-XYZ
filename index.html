@@ -15,9 +15,8 @@
   </style>
 </head>
 <body>
-  <div id="info">กำลังเตรียมระบบ AR...</div>
+  <div id="info">กำลังตรวจสอบระบบแวดล้อม...</div>
 
-  <!-- นำเข้าไลบรารี 3D ผ่าน Import Map -->
   <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
   <script type="importmap">
     {
@@ -30,99 +29,100 @@
   </script>
 
   <script type="module">
+    // ดักดูว่าโค้ดบรรทัดแรกทำงานหรือไม่
+    document.getElementById('info').innerText = 'กำลังโหลด 3D Engine...';
+
     import * as THREE from 'three';
     import { ARButton } from 'three/addons/webxr/ARButton.js';
     import { Text } from 'troika-three-text';
 
-    // 🔴 วาง URL จาก Google Apps Script (Deploy > Web App) ของคุณที่นี่
-    const API_URL = 'https://script.google.com/macros/s/AKfycbz0jF0WlmSB-f6KXMcOBQwHzOgXPOF11nFbh4EcPCxpg9d0An2Hg7547nTl90TjpsH-eA/exec'; 
+    const API_URL = 'https://script.google.com/macros/s/AKfycbx-ngkZuLKZyM-ccuab3ku5498J1CFQwkKku7oZC8eRmD3e9Dr2LjU85o5_cMqdPgxyQA/exec'; 
 
     let camera, scene, renderer;
     let controller, reticle;
     let hitTestSource = null;
     let hitTestSourceRequested = false;
-    
     let originGroup = null; 
     let inventoryData = [];
     let isOriginSet = false;
 
-    init();
+    // ตรวจสอบเบราว์เซอร์
+    if (!('xr' in navigator)) {
+      document.getElementById('info').innerText = 'อุปกรณ์/เบราว์เซอร์นี้ ไม่รองรับ AR';
+    } else {
+      init();
+    }
 
-    // 1. ดึงข้อมูลจาก API
     async function fetchInventory() {
       try {
-        document.getElementById('info').innerText = 'กำลังโหลดข้อมูลจากฐานข้อมูล...';
+        document.getElementById('info').innerText = 'กำลังเชื่อมต่อฐานข้อมูล Google Sheets...';
         const response = await fetch(API_URL);
+        
+        if (!response.ok) throw new Error('Network error');
+        
         const json = await response.json();
         
         if(json.status === 'success') {
           inventoryData = json.data;
-          document.getElementById('info').innerText = 'เล็งกล้องไปที่มุมชั้นวางเป้าหมาย แล้วแตะหน้าจอเพื่อวางพิกัด (0,0,0)';
+          document.getElementById('info').innerText = 'เล็งกล้องที่มุมชั้นวาง แล้วแตะหน้าจอเพื่อวางพิกัด (0,0,0)';
+        } else {
+           document.getElementById('info').innerText = 'ข้อมูลผิดพลาด: ' + (json.message || 'ไม่ทราบสาเหตุ');
         }
       } catch(e) {
-        document.getElementById('info').innerText = 'โหลดข้อมูลล้มเหลว ตรวจสอบการเชื่อมต่ออินเทอร์เน็ต';
-        console.error(e);
+        document.getElementById('info').innerText = 'โหลดข้อมูลล้มเหลว ตรวจสอบ URL หรือสิทธิ์ API';
       }
     }
 
     function init() {
-      const container = document.createElement('div');
-      document.body.appendChild(container);
+      try {
+        const container = document.createElement('div');
+        document.body.appendChild(container);
 
-      // สร้าง Scene และ Camera
-      scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
-      
-      const light = new THREE.AmbientLight(0xffffff, 1.5);
-      scene.add(light);
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+        
+        const light = new THREE.AmbientLight(0xffffff, 1.5);
+        scene.add(light);
 
-      // สร้าง Renderer รองรับ WebXR
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setPixelRatio(window.devicePixelRatio);
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.xr.enabled = true;
-      container.appendChild(renderer.domElement);
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.xr.enabled = true;
+        container.appendChild(renderer.domElement);
 
-      // สร้างปุ่ม "Enter AR" (บังคับเปิดโหมด Hit-Test สำหรับหาพื้น)
-      document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
+        document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
 
-      fetchInventory();
+        fetchInventory();
 
-      // สร้างเป้าเล็งสีเขียว (Reticle) สำหรับหาจุดที่จะวาง (0,0,0)
-      const reticleGeometry = new THREE.RingGeometry(0.05, 0.06, 32).rotateX(-Math.PI / 2);
-      const reticleMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-      reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
-      reticle.matrixAutoUpdate = false;
-      reticle.visible = false;
-      scene.add(reticle);
+        const reticleGeometry = new THREE.RingGeometry(0.05, 0.06, 32).rotateX(-Math.PI / 2);
+        const reticleMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
+        reticle.matrixAutoUpdate = false;
+        reticle.visible = false;
+        scene.add(reticle);
 
-      // การรับ Event เวลานิ้วแตะหน้าจอ
-      controller = renderer.xr.getController(0);
-      controller.addEventListener('select', onSelect);
-      scene.add(controller);
+        controller = renderer.xr.getController(0);
+        controller.addEventListener('select', onSelect);
+        scene.add(controller);
 
-      window.addEventListener('resize', onWindowResize);
-      renderer.setAnimationLoop(render);
+        window.addEventListener('resize', onWindowResize);
+        renderer.setAnimationLoop(render);
+      } catch (error) {
+         document.getElementById('info').innerText = 'เกิดข้อผิดพลาดในการสร้างฉาก 3D';
+      }
     }
 
-    // 2. ลอจิกการแตะหน้าจอ
     function onSelect() {
       if (!isOriginSet) {
-        // หากยังไม่ได้วาง Origin และเล็งพื้นเจอ ให้สร้างโมเดล 3D
-        if (reticle.visible) {
-          setOriginAndSpawnItems();
-        }
+        if (reticle.visible) setOriginAndSpawnItems();
       } else {
-        // หากวาง Origin แล้ว การแตะคือการคลิกที่ป้าย 3D (Raycast)
         checkIntersection();
       }
     }
 
-    // 3. วาง 3D Text ตามพิกัดอ้างอิงจากเป้าเล็ง
     function setOriginAndSpawnItems() {
       originGroup = new THREE.Group();
       originGroup.position.setFromMatrixPosition(reticle.matrix);
-      // ทำให้ตัวหนังสือหันหน้าตามแกนของพื้น
       originGroup.quaternion.setFromRotationMatrix(reticle.matrix); 
       scene.add(originGroup);
       
@@ -133,27 +133,23 @@
       inventoryData.forEach(item => {
         const textMesh = new Text();
         textMesh.text = `${item.ItemID}\n${item.Color}`;
-        textMesh.fontSize = 0.04; // ขนาดตัวอักษร
-        textMesh.color = item.Status === 'Checked' ? 0x00ff00 : 0xffffff; // สีเขียวถ้าเช็กแล้ว นอกนั้นสีขาว
+        textMesh.fontSize = 0.04; 
+        textMesh.color = item.Status === 'Checked' ? 0x00ff00 : 0xffffff; 
         textMesh.anchorX = 'center';
         textMesh.anchorY = 'middle';
         
-        // จัดพิกัดให้อยู่ตาม Google Sheets
         const posX = parseFloat(item.X) || 0;
         const posY = parseFloat(item.Y) || 0;
         const posZ = parseFloat(item.Z) || 0;
         textMesh.position.set(posX, posY, posZ);
 
-        // หมุนตัวอักษรให้ตั้งขึ้นเผชิญหน้ากับผู้ใช้ (เพราะแกนของพื้นมันนอนราบอยู่)
         textMesh.rotation.x = -Math.PI / 2;
-
         textMesh.userData = { id: item.ItemID, status: item.Status };
         textMesh.sync();
         originGroup.add(textMesh);
       });
     }
 
-    // 4. การยิง Raycast เพื่อดูว่านิ้วแตะโดนตัวอักษรไหน
     function checkIntersection() {
       const tempMatrix = new THREE.Matrix4();
       tempMatrix.identity().extractRotation(controller.matrixWorld);
@@ -161,22 +157,19 @@
       raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
       raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
 
-      // ตรวจสอบการชนกับ object ลูกๆ ใน originGroup
       const intersects = raycaster.intersectObjects(originGroup.children, true);
       if (intersects.length > 0) {
         const hitObject = intersects[0].object;
         const textObj = hitObject.isText ? hitObject : hitObject.parent;
         
-        // ถ้าสินค้านั้นยังไม่ได้ถูกเช็ก ให้ส่ง API
         if (textObj && textObj.userData.id && textObj.userData.status !== 'Checked') {
           updateStatus(textObj);
         }
       }
     }
 
-    // 5. ส่ง POST กลับไปอัปเดตสถานะที่ Google Sheets
     async function updateStatus(textMesh) {
-      textMesh.color = 0xffff00; // เปลี่ยนสีเป็นเหลืองระหว่างโหลด
+      textMesh.color = 0xffff00; 
       textMesh.sync();
       document.getElementById('info').innerText = `กำลังอัปเดต ${textMesh.userData.id}...`;
 
@@ -188,14 +181,14 @@
         const result = await response.json();
         
         if (result.status === 'success') {
-          textMesh.color = 0x00ff00; // เปลี่ยนสีเป็นเขียวเมื่อสำเร็จ
+          textMesh.color = 0x00ff00; 
           textMesh.userData.status = 'Checked';
           document.getElementById('info').innerText = `บันทึก ${textMesh.userData.id} สำเร็จ!`;
         } else {
           throw new Error(result.message);
         }
       } catch (e) {
-        textMesh.color = 0xff0000; // สีแดงเมื่อล้มเหลว
+        textMesh.color = 0xff0000; 
         document.getElementById('info').innerText = `อัปเดตผิดพลาด: ${e.message}`;
       }
       textMesh.sync();
@@ -207,7 +200,6 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
-    // 6. ลูปการเรนเดอร์ภาพ และประมวลผลพื้น (Hit Test)
     function render(timestamp, frame) {
       if (frame && !isOriginSet) {
         const referenceSpace = renderer.xr.getReferenceSpace();
@@ -232,7 +224,6 @@
             const hit = hitTestResults[0];
             const pose = hit.getPose(referenceSpace);
             reticle.visible = true;
-            // ล็อกเป้าเล็งติดกับระนาบพื้น
             reticle.matrix.fromArray(pose.transform.matrix);
           } else {
             reticle.visible = false;
