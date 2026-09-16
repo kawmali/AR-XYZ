@@ -15,7 +15,7 @@
   </style>
 </head>
 <body>
-  <div id="info">กำลังตรวจสอบระบบแวดล้อม...</div>
+  <div id="info">กำลังเตรียมระบบ AR...</div>
 
   <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
   <script type="importmap">
@@ -29,8 +29,6 @@
   </script>
 
   <script type="module">
-    document.getElementById('info').innerText = 'กำลังโหลด 3D Engine...';
-
     import * as THREE from 'three';
     import { ARButton } from 'three/addons/webxr/ARButton.js';
     import { Text } from 'troika-three-text';
@@ -38,98 +36,86 @@
     const API_URL = 'https://script.google.com/macros/s/AKfycbx-ngkZuLKZyM-ccuab3ku5498J1CFQwkKku7oZC8eRmD3e9Dr2LjU85o5_cMqdPgxyQA/exec'; 
 
     let camera, scene, renderer;
-    let controller, reticle;
-    let hitTestSource = null;
-    let hitTestSourceRequested = false;
+    let controller;
     let originGroup = null; 
     let inventoryData = [];
     let isOriginSet = false;
 
-    if (!('xr' in navigator)) {
-      document.getElementById('info').innerText = 'อุปกรณ์/เบราว์เซอร์นี้ ไม่รองรับ AR';
-    } else {
-      init();
-    }
+    init();
 
     async function fetchInventory() {
       try {
         document.getElementById('info').innerText = 'กำลังเชื่อมต่อฐานข้อมูล Google Sheets...';
         const response = await fetch(API_URL);
-        
-        if (!response.ok) throw new Error('Network error');
-        
         const json = await response.json();
         
         if(json.status === 'success') {
           inventoryData = json.data;
-          document.getElementById('info').innerText = 'เล็งกล้องที่มุมชั้นวาง แล้วแตะหน้าจอเพื่อวางพิกัด (0,0,0)';
+          document.getElementById('info').innerText = 'พร้อมเข้าสู่ AR (กดปุ่ม START AR ด้านล่าง)';
         } else {
-           document.getElementById('info').innerText = 'ข้อมูลผิดพลาด: ' + (json.message || 'ไม่ทราบสาเหตุ');
+          document.getElementById('info').innerText = 'ข้อมูลผิดพลาด: ' + json.message;
         }
       } catch(e) {
-        document.getElementById('info').innerText = 'โหลดข้อมูลล้มเหลว ตรวจสอบ URL หรือสิทธิ์ API';
+        document.getElementById('info').innerText = 'โหลดข้อมูลล้มเหลว ตรวจสอบ URL API';
       }
     }
 
     function init() {
-      try {
-        const container = document.createElement('div');
-        document.body.appendChild(container);
+      const container = document.createElement('div');
+      document.body.appendChild(container);
 
-        scene = new THREE.Scene();
-        camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
-        
-        const light = new THREE.AmbientLight(0xffffff, 1.5);
-        scene.add(light);
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+      
+      const light = new THREE.AmbientLight(0xffffff, 1.5);
+      scene.add(light);
 
-        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.xr.enabled = true;
-        container.appendChild(renderer.domElement);
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.xr.enabled = true;
+      container.appendChild(renderer.domElement);
 
-        // ✅ แก้ไขจุดนี้: ใส่ requiredFeatures ให้ถูกต้องตามมาตรฐาน Three.js
-        document.body.appendChild(ARButton.createButton(renderer, { 
-          requiredFeatures: ['immersive-ar', 'hit-test'] 
-        }));
+      // 🔓 ปลดล็อก: ใช้แค่ immersive-ar อย่างเดียว ปุ่มจะกดได้ 100% บนทุกมือถือ
+      document.body.appendChild(ARButton.createButton(renderer, { 
+        requiredFeatures: ['immersive-ar'] 
+      }));
 
-        fetchInventory();
+      fetchInventory();
 
-        const reticleGeometry = new THREE.RingGeometry(0.05, 0.06, 32).rotateX(-Math.PI / 2);
-        const reticleMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-        reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
-        reticle.matrixAutoUpdate = false;
-        reticle.visible = false;
-        scene.add(reticle);
+      controller = renderer.xr.getController(0);
+      controller.addEventListener('select', onSelect);
+      scene.add(controller);
 
-        controller = renderer.xr.getController(0);
-        controller.addEventListener('select', onSelect);
-        scene.add(controller);
-
-        window.addEventListener('resize', onWindowResize);
-        renderer.setAnimationLoop(render);
-      } catch (error) {
-         document.getElementById('info').innerText = 'เกิดข้อผิดพลาดในการสร้างฉาก 3D';
-      }
+      window.addEventListener('resize', onWindowResize);
+      renderer.setAnimationLoop(render);
     }
 
+    // เมื่อกดเข้า AR แล้ว แตะหน้าจอ 1 ครั้งเพื่อวางจุด (0,0,0) ตรงหน้ากล้องทันที
     function onSelect() {
       if (!isOriginSet) {
-        if (reticle.visible) setOriginAndSpawnItems();
+        spawnOriginAndItems();
       } else {
         checkIntersection();
       }
     }
 
-    function setOriginAndSpawnItems() {
+    function spawnOriginAndItems() {
       originGroup = new THREE.Group();
-      originGroup.position.setFromMatrixPosition(reticle.matrix);
-      originGroup.quaternion.setFromRotationMatrix(reticle.matrix); 
+      
+      // วางจุด Origin ไว้ตรงหน้ากล้อง (ห่างออกไป 1 เมตร ระดับพื้นต่ำลงเล็กน้อย)
+      const cameraPosition = new THREE.Vector3();
+      const cameraQuaternion = new THREE.Quaternion();
+      camera.getWorldPosition(cameraPosition);
+      camera.getWorldQuaternion(cameraQuaternion);
+
+      originGroup.position.copy(cameraPosition);
+      // ให้พิกัดอยู่ต่ำกว่าระดับสายตาเล็กน้อย (ประมาณหน้าชั้นวาง)
+      originGroup.position.y -= 0.5; 
       scene.add(originGroup);
       
       isOriginSet = true;
-      reticle.visible = false; 
-      document.getElementById('info').innerText = 'แตะที่ป้ายสินค้าเพื่อ Check-in';
+      document.getElementById('info').innerText = 'วางพิกัดสำเร็จ! แตะที่ป้ายเพื่อ Check-in';
 
       inventoryData.forEach(item => {
         const textMesh = new Text();
@@ -144,7 +130,6 @@
         const posZ = parseFloat(item.Z) || 0;
         textMesh.position.set(posX, posY, posZ);
 
-        textMesh.rotation.x = -Math.PI / 2;
         textMesh.userData = { id: item.ItemID, status: item.Status };
         textMesh.sync();
         originGroup.add(textMesh);
@@ -202,37 +187,6 @@
     }
 
     function render(timestamp, frame) {
-      if (frame && !isOriginSet) {
-        const referenceSpace = renderer.xr.getReferenceSpace();
-        const session = renderer.xr.getSession();
-
-        if (!hitTestSourceRequested) {
-          session.requestReferenceSpace('viewer').then((viewerSpace) => {
-            session.requestHitTestSource({ space: viewerSpace }).then((source) => {
-              hitTestSource = source;
-            }).catch((err) => {
-              console.warn("HitTestSource error:", err);
-            });
-          });
-          session.addEventListener('end', () => {
-            hitTestSourceRequested = false;
-            hitTestSource = null;
-          });
-          hitTestSourceRequested = true;
-        }
-
-        if (hitTestSource) {
-          const hitTestResults = frame.getHitTestResults(hitTestSource);
-          if (hitTestResults.length > 0) {
-            const hit = hitTestResults[0];
-            const pose = hit.getPose(referenceSpace);
-            reticle.visible = true;
-            reticle.matrix.fromArray(pose.transform.matrix);
-          } else {
-            reticle.visible = false;
-          }
-        }
-      }
       renderer.render(scene, camera);
     }
   </script>
