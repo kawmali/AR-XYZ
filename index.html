@@ -90,7 +90,11 @@
         renderer.xr.enabled = true;
         container.appendChild(renderer.domElement);
 
-        document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
+        // โค้ดใหม่ (ย้าย hit-test มาไว้ที่ optionalFeatures)
+document.body.appendChild(ARButton.createButton(renderer, { 
+  requiredFeatures: ['immersive-ar'],
+  optionalFeatures: ['hit-test'] 
+}));
 
         fetchInventory();
 
